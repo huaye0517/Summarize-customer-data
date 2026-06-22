@@ -19,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 import pandas as pd
 
 from aggregator import AggregateError, AggregateResult, aggregate_excel, export_excel
-from config import OUTPUT_COLUMNS, PREVIEW_MAX_ROWS
+from config import INTERNAL_TEMPLATE, PREVIEW_MAX_ROWS, TEMPLATES
 
 # 界面主题色（与导出 Excel 表头深绿色保持一致）
 COLOR_PRIMARY = "#006400"
@@ -32,6 +32,8 @@ COLOR_TEXT = "#1F2933"
 COLOR_TEXT_MUTED = "#6B7280"
 COLOR_HEADER_BG = "#D9D9D9"
 FONT_FAMILY = "Microsoft YaHei UI"
+
+TEMPLATE_MAP = {template.id: template for template in TEMPLATES}
 
 
 class ExcelAggregatorApp:
@@ -47,6 +49,9 @@ class ExcelAggregatorApp:
         self.input_path: Path | None = None
         self.result: AggregateResult | None = None
         self._processing = False
+        self.preview_columns: list[str] = list(INTERNAL_TEMPLATE.output_columns)
+        self.tree: ttk.Treeview | None = None
+        self.table_wrap: ctk.CTkFrame | None = None
 
         self._setup_styles()
         self._build_ui()
@@ -117,7 +122,7 @@ class ExcelAggregatorApp:
 
         ctk.CTkLabel(
             title_wrap,
-            text="上传销售单 · 按渠道与货品自动合并 · 一键导出",
+            text="支持内部/外部销售单 · 自动识别格式 · 一键汇总导出",
             font=(FONT_FAMILY, 12),
             text_color="#B7DFB7",
         ).pack(anchor=tk.W, pady=(4, 0))
@@ -238,18 +243,59 @@ class ExcelAggregatorApp:
             justify=tk.LEFT,
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
+        self.progress_frame = ctk.CTkFrame(body, fg_color="transparent")
+        self.progress_frame.pack(fill=tk.X, pady=(10, 0))
+
+        progress_top = ctk.CTkFrame(self.progress_frame, fg_color="transparent")
+        progress_top.pack(fill=tk.X)
+
+        self.progress_label_var = tk.StringVar(value="0%")
+        ctk.CTkLabel(
+            progress_top,
+            textvariable=self.progress_label_var,
+            font=(FONT_FAMILY, 11, "bold"),
+            text_color=COLOR_PRIMARY,
+            width=52,
+        ).pack(side=tk.LEFT)
+
+        self.progress_bar = ctk.CTkProgressBar(
+            progress_top,
+            height=16,
+            corner_radius=8,
+            progress_color=COLOR_PRIMARY,
+            fg_color="#E5EAE6",
+        )
+        self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
+        self.progress_bar.set(0)
+
+        self.progress_detail_var = tk.StringVar(value="等待开始汇总")
+        ctk.CTkLabel(
+            self.progress_frame,
+            textvariable=self.progress_detail_var,
+            font=(FONT_FAMILY, 10),
+            text_color=COLOR_TEXT_MUTED,
+            anchor=tk.W,
+        ).pack(fill=tk.X, pady=(6, 0))
+
         stats_row = ctk.CTkFrame(body, fg_color="transparent")
         stats_row.pack(fill=tk.X, pady=(12, 0))
 
         self.raw_count_label = self._create_stat_badge(stats_row, "原始行数", "--")
         self.result_count_label = self._create_stat_badge(stats_row, "汇总行数", "--")
-        self.channel_count_label = self._create_stat_badge(stats_row, "销售渠道", "--")
+        self.dimension_title_var = tk.StringVar(value="销售渠道数")
+        self.dimension_count_label = self._create_stat_badge(
+            stats_row,
+            self.dimension_title_var.get(),
+            "--",
+            title_var=self.dimension_title_var,
+        )
 
     def _create_stat_badge(
         self,
         parent: ctk.CTkFrame,
         title: str,
         value: str,
+        title_var: tk.StringVar | None = None,
     ) -> ctk.CTkLabel:
         """创建统计徽章。"""
         badge = ctk.CTkFrame(
@@ -263,7 +309,8 @@ class ExcelAggregatorApp:
 
         ctk.CTkLabel(
             badge,
-            text=title,
+            textvariable=title_var if title_var is not None else None,
+            text=None if title_var is not None else title,
             font=(FONT_FAMILY, 10),
             text_color=COLOR_TEXT_MUTED,
         ).pack(padx=14, pady=(8, 0))
@@ -305,47 +352,64 @@ class ExcelAggregatorApp:
             text_color=COLOR_TEXT_MUTED,
         ).pack(side=tk.RIGHT)
 
-        table_wrap = ctk.CTkFrame(
+        self.table_wrap = ctk.CTkFrame(
             card,
             fg_color="#FAFBFA",
             corner_radius=10,
             border_width=1,
             border_color=COLOR_BORDER,
         )
-        table_wrap.pack(fill=tk.BOTH, expand=True, padx=18, pady=(0, 16))
-        table_wrap.rowconfigure(0, weight=1)
-        table_wrap.columnconfigure(0, weight=1)
+        self.table_wrap.pack(fill=tk.BOTH, expand=True, padx=18, pady=(0, 16))
+        self.table_wrap.rowconfigure(0, weight=1)
+        self.table_wrap.columnconfigure(0, weight=1)
 
-        columns = OUTPUT_COLUMNS
+        self._rebuild_preview_table(self.preview_columns, INTERNAL_TEMPLATE.id)
+
+    def _rebuild_preview_table(self, columns: list[str], template_id: str) -> None:
+        """根据汇总结果动态重建预览表格列。"""
+        if self.table_wrap is None:
+            return
+
+        for widget in self.table_wrap.winfo_children():
+            widget.destroy()
+
+        self.preview_columns = list(columns)
+        template = TEMPLATE_MAP.get(template_id, INTERNAL_TEMPLATE)
+        column_widths = template.preview_column_widths
+        stretch_columns = set(template.group_by)
+
         self.tree = ttk.Treeview(
-            table_wrap,
+            self.table_wrap,
             columns=columns,
             show="headings",
             style="Result.Treeview",
         )
 
-        column_widths = {
-            "销售渠道": 460,
-            "货品名称": 820,
-            "数量": 110,
-            "金额": 130,
-        }
+        center_columns = {"数量", "金额"}
         for column in columns:
             self.tree.heading(column, text=column)
-            anchor = tk.CENTER if column in {"数量", "金额"} else tk.W
+            anchor = tk.CENTER if column in center_columns else tk.W
             self.tree.column(
                 column,
                 width=column_widths.get(column, 140),
-                minwidth=column_widths.get(column, 140),
+                minwidth=column_widths.get(column, 120),
                 anchor=anchor,
-                stretch=column in {"销售渠道", "货品名称"},
+                stretch=column in stretch_columns,
             )
 
         self.tree.tag_configure("odd", background="#FAFBFA")
         self.tree.tag_configure("even", background="#FFFFFF")
 
-        y_scroll = ttk.Scrollbar(table_wrap, orient=tk.VERTICAL, command=self.tree.yview)
-        x_scroll = ttk.Scrollbar(table_wrap, orient=tk.HORIZONTAL, command=self.tree.xview)
+        y_scroll = ttk.Scrollbar(
+            self.table_wrap,
+            orient=tk.VERTICAL,
+            command=self.tree.yview,
+        )
+        x_scroll = ttk.Scrollbar(
+            self.table_wrap,
+            orient=tk.HORIZONTAL,
+            command=self.tree.xview,
+        )
         self.tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
 
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -364,18 +428,51 @@ class ExcelAggregatorApp:
         self.status_var.set(message)
         self.status_dot.configure(text_color=colors.get(tone, COLOR_TEXT_MUTED))
 
+    def _reset_progress(self) -> None:
+        """重置进度条。"""
+        self.progress_bar.set(0)
+        self.progress_label_var.set("0%")
+        self.progress_detail_var.set("等待开始汇总")
+
+    def _report_progress(self, percent: float, message: str) -> None:
+        """线程安全地更新汇总进度。"""
+        safe_percent = max(0.0, min(float(percent), 1.0))
+
+        def update() -> None:
+            self.progress_bar.set(safe_percent)
+            self.progress_label_var.set(f"{int(safe_percent * 100)}%")
+            self.progress_detail_var.set(message)
+            self._set_status(message, "working")
+            self.root.update_idletasks()
+
+        self.root.after(0, update)
+
+    def _finish_progress(self, success: bool = True) -> None:
+        """汇总结束后的进度条状态。"""
+        if success:
+            self.progress_bar.set(1)
+            self.progress_label_var.set("100%")
+            self.progress_detail_var.set("汇总完成")
+        else:
+            self._reset_progress()
+
     def _reset_stats(self) -> None:
         """重置统计徽章。"""
         self.raw_count_label.configure(text="--")
         self.result_count_label.configure(text="--")
-        self.channel_count_label.configure(text="--")
+        self.dimension_count_label.configure(text="--")
+        self.dimension_title_var.set("销售渠道数")
 
     def _update_stats(self, result: AggregateResult) -> None:
         """更新统计徽章。"""
-        channel_count = result.data["销售渠道"].nunique()
+        template = TEMPLATE_MAP.get(result.template_id, INTERNAL_TEMPLATE)
+        dimension_column = template.group_by[0]
+        dimension_count = result.data[dimension_column].nunique()
+
         self.raw_count_label.configure(text=str(result.raw_row_count))
         self.result_count_label.configure(text=str(result.result_row_count))
-        self.channel_count_label.configure(text=str(channel_count))
+        self.dimension_title_var.set(result.dimension_label)
+        self.dimension_count_label.configure(text=str(dimension_count))
 
     def _choose_file(self) -> None:
         """选择输入 Excel 文件。"""
@@ -392,7 +489,10 @@ class ExcelAggregatorApp:
         self.input_path = Path(file_path)
         self.file_var.set(str(self.input_path))
         self.result = None
-        self._clear_preview()
+        self._rebuild_preview_table(
+            list(INTERNAL_TEMPLATE.output_columns),
+            INTERNAL_TEMPLATE.id,
+        )
         self._reset_stats()
         self.export_button.configure(state="disabled")
         self.aggregate_button.configure(state="normal")
@@ -406,7 +506,8 @@ class ExcelAggregatorApp:
         self._processing = True
         self.aggregate_button.configure(state="disabled")
         self.export_button.configure(state="disabled")
-        self._set_status("正在汇总，请稍候...", "working")
+        self._reset_progress()
+        self._report_progress(0.01, "正在启动汇总任务...")
         self.root.update_idletasks()
 
         thread = threading.Thread(target=self._run_aggregate, daemon=True)
@@ -417,7 +518,10 @@ class ExcelAggregatorApp:
         assert self.input_path is not None
 
         try:
-            result = aggregate_excel(self.input_path)
+            result = aggregate_excel(
+                self.input_path,
+                progress_callback=self._report_progress,
+            )
         except AggregateError as exc:
             self.root.after(0, lambda: self._on_aggregate_failed(str(exc)))
             return
@@ -434,14 +538,20 @@ class ExcelAggregatorApp:
         self.aggregate_button.configure(state="normal")
         self.export_button.configure(state="normal")
         self._update_stats(result)
+        self._rebuild_preview_table(
+            list(result.data.columns),
+            result.template_id,
+        )
         self._fill_preview(result.data.head(PREVIEW_MAX_ROWS))
+        self._finish_progress(success=True)
 
         preview_tip = ""
         if len(result.data) > PREVIEW_MAX_ROWS:
             preview_tip = f"，预览前 {PREVIEW_MAX_ROWS} 行"
 
         self._set_status(
-            f"汇总完成：原始 {result.raw_row_count} 行 -> 汇总后 {result.result_row_count} 行"
+            f"已识别：{result.template_label} | 汇总完成："
+            f"原始 {result.raw_row_count} 行 -> 汇总后 {result.result_row_count} 行"
             f"{preview_tip}",
             "success",
         )
@@ -454,23 +564,24 @@ class ExcelAggregatorApp:
             state="normal" if self.input_path else "disabled"
         )
         self.export_button.configure(state="disabled")
-        self._clear_preview()
+        self._rebuild_preview_table(
+            list(INTERNAL_TEMPLATE.output_columns),
+            INTERNAL_TEMPLATE.id,
+        )
         self._reset_stats()
+        self._finish_progress(success=False)
         self._set_status(message, "error")
         messagebox.showerror("汇总失败", message)
 
     def _fill_preview(self, df: pd.DataFrame) -> None:
         """填充预览表格。"""
-        self._clear_preview()
+        if self.tree is None:
+            return
+
         for index, (_, row) in enumerate(df.iterrows()):
-            values = [row[column] for column in OUTPUT_COLUMNS]
+            values = [row[column] for column in self.preview_columns]
             tag = "even" if index % 2 == 0 else "odd"
             self.tree.insert("", tk.END, values=values, tags=(tag,))
-
-    def _clear_preview(self) -> None:
-        """清空预览表格。"""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
 
     def _export_result(self) -> None:
         """导出汇总结果。"""
