@@ -37,6 +37,30 @@ def _noop_progress(percent: float, message: str) -> None:
     """空进度回调。"""
 
 
+# 常见列名变体 -> 标准列名（仅当标准列名尚不存在时重命名）
+COLUMN_ALIASES = {
+    "金额（元）": "金额",
+    "金额(元)": "金额",
+    "金额（含税）": "金额",
+    "数量（件）": "数量",
+    "数量(件)": "数量",
+}
+
+
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """将表头常见变体统一为标准列名，便于模板识别与汇总。"""
+    rename_map = {}
+    existing = set(df.columns)
+    for column in df.columns:
+        target = COLUMN_ALIASES.get(str(column).strip())
+        if target and target not in existing and column not in rename_map:
+            rename_map[column] = target
+            existing.add(target)
+    if not rename_map:
+        return df
+    return df.rename(columns=rename_map)
+
+
 def _read_excel_with_progress(path: Path, callback: ProgressCallback) -> pd.DataFrame:
     """读取 Excel 并在读取过程中汇报进度。"""
     suffix = path.suffix.lower()
@@ -64,14 +88,15 @@ def _read_excel_with_progress(path: Path, callback: ProgressCallback) -> pd.Data
         headers.append(name if name else f"列{index + 1}")
 
     estimated_total = max((worksheet.max_row or 1) - 1, 1)
-    column_data = {header: [] for header in headers}
+    # 使用列表按列索引存储，避免重复表头（如两个「序号」）导致列长度不一致
+    column_data: List[List] = [[] for _ in headers]
     row_count = 0
 
     for row in row_iter:
         row_count += 1
-        for index, header in enumerate(headers):
+        for index in range(len(headers)):
             value = row[index] if index < len(row) else None
-            column_data[header].append(value)
+            column_data[index].append(value)
 
         if row_count == 1 or row_count % 500 == 0:
             total_hint = max(estimated_total, row_count)
@@ -80,7 +105,10 @@ def _read_excel_with_progress(path: Path, callback: ProgressCallback) -> pd.Data
 
     workbook.close()
     callback(0.55, f"读取完成，共 {row_count} 行")
-    return pd.DataFrame(column_data)
+    callback(0.56, "正在整理表格数据...")
+    df = pd.DataFrame(column_data).T
+    df.columns = pd.Index(headers, dtype=object)
+    return df
 
 
 def detect_template(df: pd.DataFrame) -> TemplateConfig:
@@ -182,6 +210,9 @@ def aggregate_excel(
     if df.empty:
         raise AggregateError("Excel 中没有数据行")
 
+    report(0.57, "正在标准化表头...")
+    df = _normalize_columns(df)
+
     report(0.58, "正在识别表格类型...")
     template = detect_template(df)
     _validate_columns(df, template)
@@ -193,11 +224,12 @@ def aggregate_excel(
     work_df = df[source_columns].copy()
     raw_row_count = len(work_df)
 
-    # 过滤名称列为空的行
+    # 过滤名称列为空的行（含 NaN、None 字符串等）
     name_column = template.name_filter_column
     for text_column in template.group_by:
         work_df[text_column] = work_df[text_column].astype(str).str.strip()
-    work_df = work_df[work_df[name_column] != ""]
+    empty_markers = {"", "nan", "none", "null", "NaN", "None"}
+    work_df = work_df[~work_df[name_column].isin(empty_markers)]
 
     if work_df.empty:
         raise AggregateError(f"过滤空「{name_column}」后没有可汇总的数据")

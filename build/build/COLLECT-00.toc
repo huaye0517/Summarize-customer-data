@@ -2939,7 +2939,7 @@
    'C:\\Windows\\system32\\api-ms-win-crt-utility-l1-1-0.dll',
    'BINARY'),
   ('base_library.zip',
-   'D:\\项目\\Summarize-customer-data\\build\\build\\base_library.zip',
+   'D:\\项目\\Summarize-customer-data\\Summarize-customer-data\\build\\build\\base_library.zip',
    'DATA'),
   ('charset_normalizer\\cd.cp310-win_amd64.pyd',
    'C:\\Users\\Lenovo\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\charset_normalizer\\cd.cp310-win_amd64.pyd',
@@ -5298,5 +5298,5 @@
    'C:\\Users\\Lenovo\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\yaml\\_yaml.cp310-win_amd64.pyd',
    'EXTENSION'),
   ('客户产品Excel汇总工具.exe',
-   'D:\\项目\\Summarize-customer-data\\build\\build\\客户产品Excel汇总工具.exe',
+   'D:\\项目\\Summarize-customer-data\\Summarize-customer-data\\build\\build\\客户产品Excel汇总工具.exe',
    'EXECUTABLE')],)
