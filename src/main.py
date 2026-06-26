@@ -7,6 +7,14 @@ import sys
 import threading
 from pathlib import Path
 
+# 按系统选择界面字体，保证中文在 Windows / macOS 上均可正常显示
+if sys.platform == "darwin":
+    FONT_FAMILY = "PingFang SC"
+elif sys.platform == "win32":
+    FONT_FAMILY = "Microsoft YaHei UI"
+else:
+    FONT_FAMILY = "DejaVu Sans"
+
 # 确保从项目根目录运行 `python src/main.py` 时也能正确导入
 SRC_DIR = Path(__file__).resolve().parent
 if str(SRC_DIR) not in sys.path:
@@ -31,7 +39,6 @@ COLOR_BORDER = "#DDE3DF"
 COLOR_TEXT = "#1F2933"
 COLOR_TEXT_MUTED = "#6B7280"
 COLOR_HEADER_BG = "#D9D9D9"
-FONT_FAMILY = "Microsoft YaHei UI"
 
 TEMPLATE_MAP = {template.id: template for template in TEMPLATES}
 

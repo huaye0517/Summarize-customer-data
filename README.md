@@ -34,8 +34,8 @@
 
 ## 环境要求
 
-- Python 3.9+
-- Windows（也可在其他支持 tkinter 的系统运行）
+- Python 3.9+（需带 tkinter 支持）
+- **Windows** 或 **macOS**（Linux 也可通过源码运行，未提供安装包）
 
 界面采用 CustomTkinter 现代化风格，与导出 Excel 表头深绿色主题保持一致。
 
@@ -60,31 +60,59 @@ python src/main.py
 
 ## 打包给同事使用（开箱即用）
 
-同事电脑**无需安装 Python**，只需双击 exe 即可运行。
+同事电脑**无需安装 Python**，双击即可运行。
 
-### 打包步骤（在你自己的电脑上执行一次）
+> **重要：** PyInstaller 无法跨平台打包——Windows 的 `.exe` 只能在 Windows 上生成，macOS 的 `.app` 只能在 Mac 上生成。需要在对应系统的电脑上分别打包。
+
+### Windows 打包
 
 1. 确保已安装 Python 3.10+ 和项目依赖
 2. 双击项目根目录下的 [`build.bat`](build.bat)
 3. 等待打包完成（约 1–3 分钟）
 4. 在 `dist\客户产品Excel汇总工具\` 目录下找到可执行程序
 
-### 发给同事
+发给同事：将 `dist\客户产品Excel汇总工具` **整个文件夹**压缩成 zip，解压后双击 `客户产品Excel汇总工具.exe`。
 
-1. 将 `dist\客户产品Excel汇总工具` **整个文件夹**压缩成 zip
-2. 发给同事，解压到任意目录
-3. 双击 `客户产品Excel汇总工具.exe` 启动
+### macOS 打包（MacBook）
+
+1. 在 Mac 上安装 [Python 3.10+](https://www.python.org/downloads/)（安装包自带 tkinter）
+   - 若用 Homebrew：`brew install python-tk@3.12`（需与 Python 版本对应）
+2. 在项目根目录执行：
+
+```bash
+chmod +x build.sh
+./build.sh
+```
+
+3. 打包完成后，应用程序位于 `dist/客户产品Excel汇总工具.app`
+
+发给同事：将 `.app` 压缩为 zip 发送；解压后双击打开。若提示「无法验证开发者」，在「系统设置 → 隐私与安全性」中点击「仍要打开」。
+
+### 不打包、直接运行（开发 / 临时使用）
+
+在 Windows 或 Mac 上均可：
+
+```bash
+pip install -r requirements.txt
+python src/main.py
+```
 
 ### 注意事项
 
-- 仅支持 **Windows 64 位** 系统
+- Windows 安装包仅适用于 **Windows 64 位**
+- macOS 安装包需在 **Apple Silicon 或 Intel Mac** 上分别打包（或在目标架构的 Mac 上构建）
 - 首次启动可能稍慢（约 3–5 秒），属正常现象
-- 若杀毒软件误报，添加信任即可（PyInstaller 打包程序偶会被误报）
-- 如需自定义图标，可在 `build.spec` 中设置 `icon='app.ico'`
+- Windows 若杀毒软件误报，添加信任即可（PyInstaller 打包程序偶会被误报）
+- 如需自定义图标：Windows 在 `build.spec`、macOS 在 `build-mac.spec` 中设置 `icon`
 
 ### 命令行打包（可选）
 
 ```bash
+# Windows
 pip install -r requirements-build.txt
 pyinstaller build.spec --noconfirm --clean
+
+# macOS
+pip install -r requirements-build.txt
+pyinstaller build-mac.spec --noconfirm --clean
 ```
