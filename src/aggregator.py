@@ -11,7 +11,13 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from config import EXTERNAL_TEMPLATE, INTERNAL_TEMPLATE, TEMPLATES, TemplateConfig
+from config import (
+    EXTERNAL_TEMPLATE,
+    INTERNAL_TEMPLATE,
+    NEW_SALES_TEMPLATE,
+    TEMPLATES,
+    TemplateConfig,
+)
 
 # 进度回调：(进度 0~1, 状态说明)
 ProgressCallback = Callable[[float, str], None]
@@ -119,6 +125,10 @@ def detect_template(df: pd.DataFrame) -> TemplateConfig:
     if internal_keys.issubset(columns):
         return INTERNAL_TEMPLATE
 
+    new_sales_keys = {"客户", "产品名称", "数量合计", "销售业绩（不含运费）"}
+    if new_sales_keys.issubset(columns):
+        return NEW_SALES_TEMPLATE
+
     external_keys = {"客户", "产品名称", "销售"}
     if external_keys.issubset(columns):
         return EXTERNAL_TEMPLATE
@@ -162,20 +172,27 @@ def _convert_numeric_column(df: pd.DataFrame, column: str) -> None:
     df[column] = converted.fillna(0)
 
 
+# 数量类求和列：整数去小数，否则保留 4 位
+QUANTITY_SUM_COLUMNS = {"数量", "数量合计"}
+
+
 def _format_output_values(df: pd.DataFrame, sum_columns: List[str]) -> pd.DataFrame:
-    """格式化输出数值：数量为整数时去小数，金额保留两位小数。"""
+    """格式化输出数值：数量类整数去小数，金额类保留两位小数。"""
     result = df.copy()
 
-    if "数量" in sum_columns and "数量" in result.columns:
-        qty = result["数量"]
-        result["数量"] = qty.apply(
-            lambda value: int(value)
-            if float(value).is_integer()
-            else round(float(value), 4)
-        )
-
-    if "金额" in sum_columns and "金额" in result.columns:
-        result["金额"] = result["金额"].apply(lambda value: round(float(value), 2))
+    for column in sum_columns:
+        if column not in result.columns:
+            continue
+        if column in QUANTITY_SUM_COLUMNS:
+            result[column] = result[column].apply(
+                lambda value: int(value)
+                if float(value).is_integer()
+                else round(float(value), 4)
+            )
+        else:
+            result[column] = result[column].apply(
+                lambda value: round(float(value), 2)
+            )
 
     return result
 

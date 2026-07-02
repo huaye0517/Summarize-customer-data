@@ -73,7 +73,56 @@ EXTERNAL_TEMPLATE = TemplateConfig(
     },
 )
 
-TEMPLATES: List[TemplateConfig] = [INTERNAL_TEMPLATE, EXTERNAL_TEMPLATE]
+NEW_SALES_TEMPLATE = TemplateConfig(
+    id="new_sales",
+    label="新销售数据",
+    required_columns=[
+        "客户",
+        "产品名称",
+        "数量合计",
+        "金额",
+        "运费",
+        "实收金额",
+        "销售业绩（不含运费）",
+    ],
+    group_by=["客户", "产品名称"],
+    sum_columns=["数量合计", "金额", "运费", "实收金额", "销售业绩（不含运费）"],
+    output_columns=[
+        "客户",
+        "产品名称",
+        "数量合计",
+        "金额",
+        "运费",
+        "实收金额",
+        "销售业绩（不含运费）",
+    ],
+    name_filter_column="产品名称",
+    dimension_label="客户数",
+    excel_column_widths={
+        "客户": 28,
+        "产品名称": 75,
+        "数量合计": 14,
+        "金额": 16,
+        "运费": 14,
+        "实收金额": 16,
+        "销售业绩（不含运费）": 22,
+    },
+    preview_column_widths={
+        "客户": 220,
+        "产品名称": 680,
+        "数量合计": 110,
+        "金额": 130,
+        "运费": 110,
+        "实收金额": 130,
+        "销售业绩（不含运费）": 180,
+    },
+)
+
+TEMPLATES: List[TemplateConfig] = [
+    INTERNAL_TEMPLATE,
+    EXTERNAL_TEMPLATE,
+    NEW_SALES_TEMPLATE,
+]
 
 # 界面预览最大行数
 PREVIEW_MAX_ROWS = 200
